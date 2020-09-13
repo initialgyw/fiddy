@@ -155,6 +155,8 @@ class RHAuth:
             FiddyHelper.save_credentials(file_=self.credentials_file,
                                          section='Robinhood',
                                          credentials=self.credentials)
+            self.log.debug('Saved Robinhood credentials to '
+                           f"{self.credentials_file}")
 
         return self.credentials['access_token']
 
