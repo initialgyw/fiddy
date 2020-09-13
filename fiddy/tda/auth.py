@@ -127,6 +127,7 @@ class TdaAuth:
 
         # build the URL and store it in a new variable
         oauth_url = requests.Request('GET', url, params=payload).prepare().url
+        self.log.debug(f"VAR: oauth_url = {oauth_url}")
 
         # open the browser for the url
         browser.visit(oauth_url)
@@ -158,6 +159,7 @@ class TdaAuth:
         # grab the part we need, and decode it.
         self.credentials['code'] = \
             urllib.parse.unquote(code_url.split('code=')[1])
+        self.log.debug('Successfully acquired code')
 
         # close the browser
         browser.quit()

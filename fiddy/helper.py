@@ -60,3 +60,34 @@ class FiddyHelper:
             loaded_credentials.write(f)
 
         return
+
+    @staticmethod
+    def check_requests(r, error_out: bool = False):
+        ''' Check requests
+
+        Parameters
+        ----------
+        r : requests
+        error_out : bool
+            raise Exception if non-200
+
+        Returns
+        -------
+        bool
+
+        Exceptions
+        ----------
+        RequestError
+        '''
+        from fiddy.exceptions import RequestError
+
+        msg = f"{r.request.method} to {r.request.url} returned " \
+              f"{r.status_code}"
+
+        if r.status_code != 200:
+            if error_out:
+                raise RequestError(msg)
+            else:
+                return False, msg
+
+        return True, msg
