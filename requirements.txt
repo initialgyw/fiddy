@@ -1,0 +1,2 @@
+splinter
+alpaca-trade-api
