@@ -172,7 +172,7 @@ class RocketChatBot:
                     multiprocessing.Process(target=rocketchatbot,
                                             args=(ticker,
                                                   self.credentials['url'],
-                                                  self.channel_ids[0],
+                                                  self.channel_ids[1],
                                                   self.request_header)).start()
 
     def ws_connect(self):
