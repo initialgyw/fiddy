@@ -85,7 +85,7 @@ class Alpaca:
 
     def get_calendar_dt(self) -> list:
         ''' Get calendar in datetime format
-        
+
         Returns
         -------
         List[Dict]
@@ -104,12 +104,17 @@ class Alpaca:
         '''
 
         file_ = f"{self.data_dir}/calendar.pickle"
-        calendar: list = FiddyHelper.load_data(file_=file_, output_data_type='dict')
+        calendar: list = FiddyHelper.load_data(file_=file_,
+                                               output_data_type='dict')
 
         # ensure data is not expired
-        if calendar and calendar['expiration']
+        if calendar and (dt.datetime.now(tz).date() < calendar['expiration']):
+            self.log.debug(f"Read calendar from {file_}")
+            return calendar['calendar']
 
+        # make str of calendar easy to use
         calendar: list = self.get_calendar()
+        calendar_dt: list = []
         for cal in calendar:
             date = dt.datetime.strptime(cal['date'], '%Y-%m-%d')
             market_open = date.replace(hour=int(cal['open'].split(':')[0]),
@@ -129,19 +134,20 @@ class Alpaca:
                 'session_close': session_close
             })
 
+        # save the data
         data = {
             'expiration': str((dt.datetime.now(tz)
                                + dt.timedelta(days=1)).date()),
             'calendar': calendar_dt
         }
-
         FiddyHelper.save_data(file_=file_, data=data, input_data_type='dict')
+        self.log.debug(f"Saved calendar in datetime formats to {file_}")
 
         return calendar_dt
 
     def get_last_closing_date(self,
                               time_=dt.datetime.now(tz),
-                              extended_hours: bool = False):
+                              extended_hours: bool = False) -> dt.date:
         ''' Get last closing date or business date
 
         Parameters
@@ -158,75 +164,37 @@ class Alpaca:
         dt.date
         '''
 
-        calendar_file = f"{self.data_dir}/calendar.pickle"
+        # get calendar in datetime format
+        calendar = self.get_calendar_dt()
 
-        # convert calendar
-        calendar = FiddyHelper.load_data(file_=calendar_file,
-                                         output_data_type='dict')
-        print(calendar)
-
-        exit()
-
-        if isinstance(time_, dt.date):
+        if type(time_) == dt.date:
             # Arbitrarily set the hours and minute as 18:00 for regular hour
             # and 23:59:59 as extended hour if time was not passed in
             if extended_hours is False:
-                time_ = dt.datetime.combine(time_, dt.time(18, 0, 0))
+                time_ = tz.localize(dt.datetime.combine(time_,
+                                                        dt.time(18, 0, 0)))
             else:
-                time_ = dt.datetime.combine(time_, dt.time(23, 59, 59))
+                time_ = tz.localize(dt.datetime.combine(time_,
+                                                        dt.time(23, 59, 59)))
 
-        elif (isinstance(time_, dt.datetime)
-              and time.strftime('%H:%M') == '00:00'):
+        elif (type(time_) == dt.datetime
+              and time_.strftime('%H:%M') == '00:00'):
             if extended_hours is False:
                 time_ = time_.replace(hour=18, minute=0)
             else:
                 time_ = time_.replace(hour=23, minute=59, second=59)
         self.log.debug(f"VAR: time_ = {str(time_)}")
 
-        # string start date is needed to look in calendar
-        time_day = time_.strftime('%Y-%m-%d')
+        if extended_hours is False:
+            closing_hours = [cal['market_close']
+                             for cal in calendar
+                             if cal['market_close'] < time_][-1]
+        else:
+            closing_hours = [cal['session_close']
+                             for cal in calendar
+                             if cal['session_close'] < time_][-1]
 
-        # tracking date backward
-        end = start
-
-        while True:
-            # string end date is needed
-            s_end = end.strftime('%Y-%m-%d')
-
-            # locate hours in calendar
-            try:
-                hours = list(
-                    filter(lambda date:
-                           date['date'] == s_end, calendar))[0]
-            except IndexError:
-                end = end - dt.timedelta(days=1)
-                continue
-
-            # hour exists and this is different from starting time
-            if s_end != s_start:
-                break
-
-            # hour exist but inside of market hours
-            if (dt.datetime.strptime(hours['open'], '%H:%M').time()
-                    <= start.time() <= dt.datetime.strptime(
-                        hours['close'],
-                        '%H:%M').time()):
-                end = end - dt.timedelta(days=1)
-                continue
-
-            break
-
-        if last_business_date:
-            if start.date() == end.date():
-                end = self.get_last_closing_date(
-                    start - dt.timedelta(days=1),
-                    calendar=calendar)
-
-        try:
-            return end.date()
-        except AttributeError:
-            return end
-
+        return closing_hours.date()
 
     @staticmethod
     def get_credentials(file_: str = f"{Path.home()}/.fiddy.ini",
@@ -267,5 +235,11 @@ if __name__ == '__main__':
     # calendar = alpaca.get_calendar()
 
     # get_calendar_dt
-    calendar = alpaca.get_calendar_dt()
+    # calendar = alpaca.get_calendar_dt()
+    # print(calendar[-1])
 
+    # time_ = dt.datetime.now(tz)
+    time_ = dt.datetime(2020, 9, 17, 0, 0, 0, tzinfo=tz)
+    last_closing_date = alpaca.get_last_closing_date(time_=time_,
+                                                     extended_hours=False)
+    print(last_closing_date)
