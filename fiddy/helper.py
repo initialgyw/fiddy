@@ -13,7 +13,8 @@ class FiddyHelper:
     load_credentials(file_) -> configparser.RawConfigParser
     save_credentials(file_, section, credentials) -> bool
     check_requests(requests, error_out) -> Tuple(bool, msg)
-    save_data(file_, data, input_data_type)
+    save_data(file_, data, input_data_type) -> bool
+    load_data(file_, output_data_type) -> data
     '''
 
     @staticmethod

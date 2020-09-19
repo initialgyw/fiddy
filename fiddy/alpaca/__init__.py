@@ -20,6 +20,8 @@ class Alpaca:
     Methods
     -------
     get_calendar(cache) -> list
+    get_calendar_dt() -> list
+    get_last_closing_date(time_, extended_hours) -> dt.date()
     get_credentials(file_, section) -> dict
     '''
     def __init__(self,
