@@ -22,6 +22,7 @@ class Alpaca:
     get_calendar(cache) -> list
     get_calendar_dt() -> list
     get_last_closing_date(time_, extended_hours) -> dt.date()
+    is_market_open(time_) -> str
     get_credentials(file_, section) -> dict
     '''
     def __init__(self,
@@ -138,8 +139,7 @@ class Alpaca:
 
         # save the data
         data = {
-            'expiration': str((dt.datetime.now(tz)
-                               + dt.timedelta(days=1)).date()),
+            'expiration': (dt.datetime.now(tz) + dt.timedelta(days=1)).date(),
             'calendar': calendar_dt
         }
         FiddyHelper.save_data(file_=file_, data=data, input_data_type='dict')
@@ -198,6 +198,62 @@ class Alpaca:
 
         return closing_hours.date()
 
+    def get_market_status(self,
+                          time_: dt.datetime = dt.datetime.now(tz),
+                          calendar: list = []) -> str:
+        ''' Check to see if market is open at a specific time
+
+        time_: dt.datetime
+            time to check for market status
+        calendar: list
+            list of hours in datetime format, see self.get_calendar_dt()
+
+        Returns
+        -------
+        str
+            [pre, open, post, closed]
+        '''
+
+        # get calendar if not provided
+        if not calendar:
+            calendar = self.get_calendar_dt()
+
+        self.log.debug(f"VAR: time_ = {time_}")
+
+        market_day = [day for day in calendar
+                      if day['market_open'].date() == time_.date()]
+
+        # if nothing is retured, then market is closed for that time
+        if len(market_day) == 0:
+            return 'closed'
+        market_day = market_day[0]
+
+        # time between open and close
+        if (market_day['market_open'].time()
+                <= time_.time()
+                <= market_day['market_close'].time()):
+            return 'open'
+
+        # pre market
+        if time_.time() < market_day['market_open'].time():
+            return 'pre'
+
+        # post market
+        if time_.time() > market_day['market_close'].time():
+            return 'post'
+
+    def get_business_days(
+            self,
+            start_day: dt.date,
+            end_day: dt.date = dt.datetime.now(tz).date()) -> list:
+        ''' Get business days between start and end '''
+        calendar = self.get_calendar_dt()
+
+        return [cal['session_open'].date()
+                for cal in calendar
+                if (cal['session_open'].date() >= start_day
+                and cal['session_close'].date() <= end_day)]
+
     @staticmethod
     def get_credentials(file_: str = f"{Path.home()}/.fiddy.ini",
                         section: str = 'alpaca_paper') -> dict:
@@ -241,7 +297,15 @@ if __name__ == '__main__':
     # print(calendar[-1])
 
     # time_ = dt.datetime.now(tz)
-    time_ = dt.datetime(2020, 9, 17, 0, 0, 0, tzinfo=tz)
-    last_closing_date = alpaca.get_last_closing_date(time_=time_,
-                                                     extended_hours=False)
-    print(last_closing_date)
+    # time_ = dt.datetime(2020, 9, 17, 0, 0, 0, tzinfo=tz)
+    # last_closing_date = alpaca.get_last_closing_date(time_=time_,
+    #                                                  extended_hours=False)
+    # print(last_closing_date)
+
+    # get_business_days
+    # start_day = dt.date(2020, 1, 1)
+    # print(alpaca.get_business_days(start_day=start_day))
+
+    time_ = dt.datetime(2020, 9, 17, 23, 31, 0, tzinfo=tz)
+    market_status = alpaca.get_market_status(time_=time_)
+    print(market_status)
