@@ -191,7 +191,7 @@ class Tda:
             _, msg = FiddyHelper.check_requests(r, error_out=False)
 
             if r.status_code == 429:
-                self.log.debug('Hitting rate limit. Sleeping for 40 seconds.')
+                self.log.warning('Hitting rate limit. Sleeping for 40 seconds.')
                 rate_limit_counter = rate_limit_counter + 1
                 time.sleep(40)
                 continue
@@ -365,7 +365,7 @@ if __name__ == '__main__':
     # print(df_quotes)
 
     # minute quotes
-    df_quotes = tda.get_minute_quotes('msft')
+    df_quotes = tda.get_minute_quotes('tsla')
     print(df_quotes)
 
     # fundamental
