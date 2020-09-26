@@ -102,7 +102,8 @@ class FiddyHelper:
     @staticmethod
     def save_data(file_: str,
                   data=None,
-                  input_data_type: str = None) -> bool:
+                  input_data_type: str = None,
+                  **kwargs) -> bool:
         ''' Save the data to a file
 
         Parameters
@@ -136,13 +137,22 @@ class FiddyHelper:
 
         if input_data_type == 'lod' or input_data_type == 'dict':
             # dump data as json
-            if '.json' in file_:
+            if file_.endswith('.json'):
                 with open(file_, 'w') as f:
                     json.dump(data, f, indent=2)
+            elif file_.endswith('.pickle'):
+                pickle.dump(data, open(file_, 'wb'))
+            else:
+                raise ValueError(f"Not sure how to save to {file_}")
 
         elif input_data_type == 'df':
             if '.csv' in file_:
-                data.to_csv(file_)
+                data.to_csv(file_, **kwargs)
+            else:
+                raise ValueError(f"Not sure how to save to {file_}")
+
+        elif input_data_type == 'NONE' and file_.endswith('NODATA'):
+            Path(file_).touch()
 
         else:
             raise ValueError(f"Not sure how to save {input_data_type}")
@@ -183,7 +193,7 @@ class FiddyHelper:
 
         elif output_data_type == 'df':
             if '.csv' in file_:
-                data = pd.read_csv(file_, index_col='Date', parse_dates=True)
+                data = pd.read_csv(file_, parse_dates=True)
 
         else:
             raise ValueError(f"Unknown data_type: {output_data_type}")
