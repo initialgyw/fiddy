@@ -151,6 +151,9 @@ class FiddyHelper:
             else:
                 raise ValueError(f"Not sure how to save to {file_}")
 
+        elif input_data_type == 'NONE' and file_.endswith('NODATA'):
+            Path(file_).touch()
+
         else:
             raise ValueError(f"Not sure how to save {input_data_type}")
 

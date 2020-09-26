@@ -8,6 +8,7 @@ from pytz import timezone
 import pandas as pd
 import datetime as dt
 import requests
+import time
 
 tz = timezone('US/Eastern')
 
@@ -27,6 +28,7 @@ class Tda:
     get_price_history
     get_daily_quotes
     get_minute_quotes
+    get_fundamentals
     '''
     def __init__(self,
                  username: str = None,
@@ -57,6 +59,56 @@ class Tda:
 
         # calendar
         self.calendar = self.alpaca.get_calendar_dt()
+
+    def _convert_time_to_epoch_ms(self, time_: dt.datetime):
+        ''' Convert a datetime to epoch millsecond '''
+        return int(time_.timestamp() * 1000)
+
+    def get_fundamental(
+            self,
+            symbol: str,
+            url: str = 'https://api.tdameritrade.com/v1/instruments'):
+        ''' Get fundamentals for a ticker '''
+        symbol = symbol.upper()
+
+        file_ = f"{self.data_dir}/{symbol}/fundamental.json"
+        
+        # load from cache if possible
+        fundamental_data = FiddyHelper.load_data(file_=file_,
+                                                 output_data_type='dict')
+        if (fundamental_data
+                and (dt.datetime.now(tz).date()
+                     < dt.datetime.strptime(
+                            fundamental_data['expiration'],
+                            '%Y-%m-%d').date())):
+            self.log.debug(f"Read fundamental data from {file_}")
+            return fundamental_data['fundamental']
+
+        # build request
+        headers = {'Authorization': self.auth.get_access_token()}
+        payload = {
+            'symbol': symbol,
+            'projection': 'fundamental',
+        }
+
+        r = requests.get(url, headers=headers, params=payload)
+        FiddyHelper.check_requests(r, error_out=True)
+
+        if not r.json():
+            self.log.warning(f"{symbol} does not exist in TDA")
+            return None
+
+        fundamental_data = {
+            'expiration': str((dt.datetime.now(tz)
+                               + dt.timedelta(days=1)).date()),
+            'fundamental': r.json()[symbol]
+        }
+        FiddyHelper.save_data(file_=file_,
+                              data=fundamental_data,
+                              input_data_type='dict')
+        self.log.debug(f"Saved fundamental's data to {file_}")
+        
+        return fundamental_data['fundamental']
 
     def get_price_history(
             self,
@@ -107,6 +159,8 @@ class Tda:
               'open': 285.38,
               'volume': 146684784}]
         '''
+        from fiddy.exceptions import RequestError
+
         # variables validation
         symbol = symbol.upper()
 
@@ -127,8 +181,24 @@ class Tda:
         url = f"{self.url}/v1/marketdata/{symbol}/pricehistory"
 
         # get the request
-        r = requests.get(url, params=payload, headers=headers)
-        FiddyHelper.check_requests(r, error_out=True)
+        rate_limit_counter = 0
+        while rate_limit_counter < 3:
+            if rate_limit_counter == 2:
+                raise RequestError('Rate Limit Hit')
+
+            self.log.debug(f"Getting quotes for {str(payload)}")
+            r = requests.get(url, params=payload, headers=headers)
+            _, msg = FiddyHelper.check_requests(r, error_out=False)
+
+            if r.status_code == 429:
+                self.log.debug('Hitting rate limit. Sleeping for 40 seconds.')
+                rate_limit_counter = rate_limit_counter + 1
+                time.sleep(40)
+                continue
+            elif r.status_code == 200:
+                break
+            else:
+                raise RequestError(msg)
 
         if len(r.json()['candles']) == 0:
             self.log.debug(f"{symbol} returned no quotes with "
@@ -158,6 +228,10 @@ class Tda:
                     self.log.debug(f"Returned {symbol} daily quotes from "
                                    f"{file_}")
                     return df_quotes
+
+        # make sure the symbol exists
+        if not self.get_fundamental(symbol=symbol):
+            raise ValueError(f"{symbol} does not exist in TDA")
 
         # get quotes
         quotes = self.get_price_history(symbol)
@@ -203,8 +277,13 @@ class Tda:
         -------
         pd.DataFrame
         '''
+        symbol = symbol.upper()
 
-        # is start_day is not provided, one year ago will be used
+        # make sure the symbol exists
+        if not self.get_fundamental(symbol=symbol):
+            raise ValueError(f"{symbol} does not exist in TDA")
+
+        # if start_day is not provided, one year ago will be used
         if start_day is None:
             start_day = end_day - dt.timedelta(days=365)
 
@@ -212,15 +291,73 @@ class Tda:
 
         # get the business days between start and end
         business_days = [day
-                         for day in self.calendar()
+                         for day in self.calendar
                          if (day['session_open'].date() >= start_day
                              and day['session_open'].date() <= end_day)]
 
         # get the quotes per day
+        df_quotes = pd.DataFrame()
         for day in business_days:
-            # need to add time in day
-            print(day)
+            
+            date = day['session_open'].date()
 
+            # used for reading and saving data
+            file_ = f"{self.data_dir}/{symbol}/" \
+                    f"{str(date)}-{frequency}minute.csv"
+
+            # used to check if minute data exist for that date
+            file_no_data = f"{file_}-NODATA"
+            if Path(file_no_data).exists():
+                self.log.debug(f"{file_no_data} exists. "
+                               f"No {frequency} minute data on {date}")
+                continue
+
+            # load from cache
+            df_quote = FiddyHelper.load_data(file_=file_,
+                                             output_data_type='df')
+            if not df_quote.empty:
+                self.log.debug(f"Read {symbol} {frequency}-minute data "
+                               f"from {file_}")
+                df_quotes = df_quotes.append(df_quote)
+                continue
+
+            # tda takes in epoch time
+            day_start_epoch = self._convert_time_to_epoch_ms(
+                                day['session_open'])
+            day_end_epoch = self._convert_time_to_epoch_ms(day['session_close'])
+
+            quotes = self.get_price_history(symbol,
+                                            start_date=day_start_epoch,
+                                            end_date=day_end_epoch,
+                                            frequency=frequency,
+                                            frequency_type='minute')
+            
+            # no quotes detected, meaning tda is not returning anything
+            if len(quotes) == 0:
+                FiddyHelper.save_data(file_=file_no_data,
+                                      data='NONE',
+                                      input_data_type='NONE')
+                self.log.debug(f"Created {file_no_data} "
+                               "so it's not queried again")
+                continue
+
+            # convert to dataframe
+            df_quote = pd.DataFrame(quotes)
+
+            # if day is today don't save
+            if (date != dt.datetime.now(tz).date):
+                # save the data to file
+                FiddyHelper.save_data(file_=file_,
+                                      data=df_quote,
+                                      input_data_type='df',
+                                      index=False)
+                self.log.debug(f"Saved {symbol} {frequency}-minute quotes "
+                               f"into {file_}")
+
+            # append it df_quotes
+            df_quotes = df_quotes.append(df_quote)
+
+        return df_quotes
 
 if __name__ == '__main__':
     tda = Tda()
@@ -228,4 +365,8 @@ if __name__ == '__main__':
     # print(df_quotes)
 
     # minute quotes
-    df_quotes = tda.get_minute_quotes('spy')
+    df_quotes = tda.get_minute_quotes('msft')
+    print(df_quotes)
+
+    # fundamental
+    # tda.get_fundamental('spy')
