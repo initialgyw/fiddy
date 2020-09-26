@@ -72,7 +72,7 @@ class Tda:
         symbol = symbol.upper()
 
         file_ = f"{self.data_dir}/{symbol}/fundamental.json"
-        
+
         # load from cache if possible
         fundamental_data = FiddyHelper.load_data(file_=file_,
                                                  output_data_type='dict')
@@ -107,7 +107,7 @@ class Tda:
                               data=fundamental_data,
                               input_data_type='dict')
         self.log.debug(f"Saved fundamental's data to {file_}")
-        
+
         return fundamental_data['fundamental']
 
     def get_price_history(
@@ -191,7 +191,8 @@ class Tda:
             _, msg = FiddyHelper.check_requests(r, error_out=False)
 
             if r.status_code == 429:
-                self.log.warning('Hitting rate limit. Sleeping for 40 seconds.')
+                self.log.warning('Hitting rate limit.'
+                                 'Sleeping for 40 seconds.')
                 rate_limit_counter = rate_limit_counter + 1
                 time.sleep(40)
                 continue
@@ -298,7 +299,7 @@ class Tda:
         # get the quotes per day
         df_quotes = pd.DataFrame()
         for day in business_days:
-            
+
             date = day['session_open'].date()
 
             # used for reading and saving data
@@ -324,14 +325,15 @@ class Tda:
             # tda takes in epoch time
             day_start_epoch = self._convert_time_to_epoch_ms(
                                 day['session_open'])
-            day_end_epoch = self._convert_time_to_epoch_ms(day['session_close'])
+            day_end_epoch = self._convert_time_to_epoch_ms(
+                                day['session_close'])
 
             quotes = self.get_price_history(symbol,
                                             start_date=day_start_epoch,
                                             end_date=day_end_epoch,
                                             frequency=frequency,
                                             frequency_type='minute')
-            
+
             # no quotes detected, meaning tda is not returning anything
             if len(quotes) == 0:
                 FiddyHelper.save_data(file_=file_no_data,
@@ -358,6 +360,7 @@ class Tda:
             df_quotes = df_quotes.append(df_quote)
 
         return df_quotes
+
 
 if __name__ == '__main__':
     tda = Tda()
